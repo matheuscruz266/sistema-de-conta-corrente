@@ -49,7 +49,7 @@ export default function Dashboard() {
   const loadData = async () => {
     try {
       const data = await getTransactions(undefined, 'date')
-      setTransactions(data)
+      setTransactions(Array.isArray(data) ? data : [])
     } catch {
       // Handled
     } finally {

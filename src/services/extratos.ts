@@ -73,20 +73,30 @@ export const parseExtratoFile = async (
   file: File,
 ): Promise<{ filename: string; transactions: CandidateTransaction[] }> => {
   const { content, isBase64, format } = await readFileForUpload(file)
-  return pb.send('/backend/v1/extrato/parse', {
+  const res = await pb.send('/backend/v1/extrato/parse', {
     method: 'POST',
     body: JSON.stringify({ content, filename: file.name, format, isBase64 }),
     headers: { 'Content-Type': 'application/json' },
   })
+  return {
+    filename: res?.filename || file.name,
+    transactions: Array.isArray(res?.transactions) ? res.transactions : [],
+  }
 }
 
 export const importExtratoTransactions = async (
   transactions: CandidateTransaction[],
   filename: string,
 ): Promise<ImportResult> => {
-  return pb.send('/backend/v1/extrato/import', {
+  const res = await pb.send('/backend/v1/extrato/import', {
     method: 'POST',
     body: JSON.stringify({ transactions, filename }),
     headers: { 'Content-Type': 'application/json' },
   })
+  return {
+    success: res?.success ?? false,
+    importedCount: res?.importedCount ?? 0,
+    filename: res?.filename ?? filename,
+    errors: Array.isArray(res?.errors) ? res.errors : undefined,
+  }
 }

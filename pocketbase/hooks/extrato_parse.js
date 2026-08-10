@@ -98,7 +98,11 @@ routerAdd(
     }
 
     function parseXlsxContent(b64) {
-      return null
+      try {
+        return parseXlsxContentLegacy(b64)
+      } catch (e) {
+        return null
+      }
     }
 
     function parseXlsxContentLegacy(b64) {
@@ -340,9 +344,9 @@ routerAdd(
         }
         return e.json(200, { filename: fileName, transactions: pdfTx })
       } catch (err) {
-        return e.json(500, {
-          error: 'Erro ao processar PDF com IA: ' + (err.message || 'erro desconhecido'),
-        })
+        return e.internalServerError(
+          'Erro ao processar PDF com IA: ' + (err.message || 'erro desconhecido'),
+        )
       }
     }
 
@@ -362,9 +366,9 @@ routerAdd(
         }
         return e.json(200, { filename: fileName, transactions: xlsxTx })
       } catch (err) {
-        return e.json(500, {
-          error: 'Erro ao processar Excel com IA: ' + (err.message || 'erro desconhecido'),
-        })
+        return e.internalServerError(
+          'Erro ao processar Excel com IA: ' + (err.message || 'erro desconhecido'),
+        )
       }
     }
 
@@ -384,9 +388,9 @@ routerAdd(
       }
       return e.json(200, { filename: fileName, transactions: txResult })
     } catch (err) {
-      return e.json(500, {
-        error: 'Erro ao processar o extrato com IA: ' + (err.message || 'erro desconhecido'),
-      })
+      return e.internalServerError(
+        'Erro ao processar o extrato com IA: ' + (err.message || 'erro desconhecido'),
+      )
     }
   },
   $apis.requireAuth(),

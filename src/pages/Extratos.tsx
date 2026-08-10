@@ -86,20 +86,21 @@ export default function Extratos() {
     setParsing(true)
     try {
       const res = await parseExtratoFile(selectedFile)
-      setCandidateTransactions(res.transactions || [])
-
       if (!res.transactions || res.transactions.length === 0) {
         setParseError(
-          'Não foram encontradas movimentações claras no arquivo. Tente um formato mais limpo.',
+          'Nenhuma transação identificada no arquivo. Verifique se o conteúdo é um extrato bancário válido.',
         )
       } else {
+        setCandidateTransactions(res.transactions)
         toast({
           title: 'Extrato Analisado',
           description: `Extraídas ${res.transactions.length} movimentações para confirmação.`,
         })
       }
     } catch (err: any) {
-      const message = getErrorMessage(err) || 'Falha ao processar o extrato bancário.'
+      const message =
+        getErrorMessage(err) ||
+        'Falha ao processar o extrato bancário. Verifique o formato do arquivo.'
       setParseError(message)
     } finally {
       setParsing(false)
@@ -113,6 +114,12 @@ export default function Extratos() {
     setImportErrors([])
     try {
       const result: ImportResult = await importExtratoTransactions(candidates, selectedFile.name)
+      if (!result.success && result.importedCount === 0) {
+        setParseError(
+          'Nenhuma movimentação pôde ser importada. Verifique os dados e tente novamente.',
+        )
+        return
+      }
       toast({
         title: 'Movimentações Salvas',
         description: `${result.importedCount} lançamentos foram adicionados à conta corrente.`,
@@ -170,6 +177,17 @@ export default function Extratos() {
 
   return (
     <div className="space-y-6 animate-fade-in">
+      {(parsing || importing) && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center backdrop-blur-sm">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 flex flex-col items-center gap-3 shadow-xl">
+            <Loader2 className="h-8 w-8 text-indigo-600 animate-spin" />
+            <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+              {parsing ? 'Analisando extrato...' : 'Salvando movimentações...'}
+            </p>
+            <p className="text-xs text-slate-500">Isso pode levar alguns segundos.</p>
+          </div>
+        </div>
+      )}
       <Card className="border-slate-200 dark:border-slate-800">
         <CardHeader>
           <CardTitle className="text-base font-bold flex items-center gap-2">
