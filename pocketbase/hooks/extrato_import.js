@@ -13,34 +13,67 @@ routerAdd(
       return e.badRequestError('Nenhuma movimentação para importar')
     }
 
-    const txCol = $app.findCollectionByNameOrId('transactions')
-    const extratoCol = $app.findCollectionByNameOrId('extratos')
-
-    let importedCount = 0
-    for (let i = 0; i < transactions.length; i++) {
-      const item = transactions[i]
-      if (!item.description || !item.amount || !item.type) continue
-
-      const rec = new Record(txCol)
-      rec.set('user', userId)
-      rec.set('description', String(item.description))
-      rec.set('amount', Math.abs(Number(item.amount) || 0))
-      rec.set('type', item.type === 'entrada' ? 'entrada' : 'saida')
-      rec.set('category', item.category || 'Outros')
-
-      let dtStr = item.date
-      if (!dtStr) {
-        dtStr = new Date().toISOString()
-      } else if (!dtStr.includes('T')) {
-        dtStr = dtStr + ' 12:00:00.000Z'
+    var isDuplicate = false
+    try {
+      var userExtratos = $app.findRecordsByFilter(
+        'extratos',
+        "user = '" + userId + "'",
+        '-created',
+        100,
+        0,
+      )
+      for (var i = 0; i < userExtratos.length; i++) {
+        if (userExtratos[i].getString('filename') === fileName) {
+          isDuplicate = true
+          break
+        }
       }
-      rec.set('date', dtStr)
-      rec.set('source_file', fileName)
-      $app.save(rec)
-      importedCount++
+    } catch (_) {}
+
+    if (isDuplicate) {
+      return e.badRequestError(
+        'Este arquivo já foi importado anteriormente. Exclua o registro anterior no Histórico antes de reimportar.',
+      )
     }
 
-    const extratoRec = new Record(extratoCol)
+    var txCol = $app.findCollectionByNameOrId('transactions')
+    var extratoCol = $app.findCollectionByNameOrId('extratos')
+    var importedCount = 0
+    var errors = []
+
+    for (var j = 0; j < transactions.length; j++) {
+      var item = transactions[j]
+      if (!item.description || !item.amount || !item.type) {
+        errors.push('Linha ' + (j + 1) + ': dados incompletos (descrição, valor ou tipo ausente)')
+        continue
+      }
+      try {
+        var rec = new Record(txCol)
+        rec.set('user', userId)
+        rec.set('description', String(item.description))
+        rec.set('amount', Math.abs(Number(item.amount) || 0))
+        rec.set('type', item.type === 'entrada' ? 'entrada' : 'saida')
+        rec.set('category', item.category || 'Outros')
+        var dtStr = item.date
+        if (!dtStr) {
+          dtStr = new Date().toISOString()
+        } else if (typeof dtStr === 'string' && dtStr.indexOf('T') === -1) {
+          dtStr = dtStr + 'T12:00:00.000Z'
+        }
+        rec.set('date', dtStr)
+        rec.set('source_file', fileName)
+        $app.save(rec)
+        importedCount++
+      } catch (err) {
+        errors.push('Linha ' + (j + 1) + ': ' + (err.message || 'erro ao salvar'))
+      }
+    }
+
+    if (importedCount === 0) {
+      return e.badRequestError('Nenhuma movimentação pôde ser importada. ' + errors.join('; '))
+    }
+
+    var extratoRec = new Record(extratoCol)
     extratoRec.set('user', userId)
     extratoRec.set('filename', fileName)
     extratoRec.set('transactions_count', importedCount)
@@ -50,6 +83,7 @@ routerAdd(
       success: true,
       importedCount: importedCount,
       filename: fileName,
+      errors: errors.length > 0 ? errors : undefined,
     })
   },
   $apis.requireAuth(),

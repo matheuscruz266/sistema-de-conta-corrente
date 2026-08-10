@@ -18,19 +18,64 @@ export interface CandidateTransaction {
   date: string
 }
 
+export interface ImportResult {
+  success: boolean
+  importedCount: number
+  filename: string
+  errors?: string[]
+}
+
 export const getExtratos = async (): Promise<Extrato[]> => {
   return pb.collection('extratos').getFullList<Extrato>({
     sort: '-created',
   })
 }
 
-export const parseExtratoFile = async (
-  content: string,
+export const deleteExtratoWithTransactions = async (
+  extratoId: string,
   filename: string,
+): Promise<void> => {
+  const transactions = await pb.collection('transactions').getFullList({
+    filter: `source_file = "${filename}"`,
+  })
+  for (const tx of transactions) {
+    await pb.collection('transactions').delete(tx.id)
+  }
+  await pb.collection('extratos').delete(extratoId)
+}
+
+function readFileForUpload(
+  file: File,
+): Promise<{ content: string; isBase64: boolean; format: string }> {
+  return new Promise((resolve, reject) => {
+    const ext = file.name.split('.').pop()?.toLowerCase() || ''
+    const binaryFormats = ['pdf', 'xlsx', 'xls']
+
+    if (!binaryFormats.includes(ext)) {
+      file
+        .text()
+        .then((text) => resolve({ content: text, isBase64: false, format: ext }))
+        .catch(reject)
+    } else {
+      const reader = new FileReader()
+      reader.onload = () => {
+        const result = reader.result as string
+        const base64 = result.split(',')[1] || ''
+        resolve({ content: base64, isBase64: true, format: ext })
+      }
+      reader.onerror = () => reject(new Error('Não foi possível ler o arquivo'))
+      reader.readAsDataURL(file)
+    }
+  })
+}
+
+export const parseExtratoFile = async (
+  file: File,
 ): Promise<{ filename: string; transactions: CandidateTransaction[] }> => {
+  const { content, isBase64, format } = await readFileForUpload(file)
   return pb.send('/backend/v1/extrato/parse', {
     method: 'POST',
-    body: JSON.stringify({ content, filename }),
+    body: JSON.stringify({ content, filename: file.name, format, isBase64 }),
     headers: { 'Content-Type': 'application/json' },
   })
 }
@@ -38,7 +83,7 @@ export const parseExtratoFile = async (
 export const importExtratoTransactions = async (
   transactions: CandidateTransaction[],
   filename: string,
-): Promise<{ success: boolean; importedCount: number }> => {
+): Promise<ImportResult> => {
   return pb.send('/backend/v1/extrato/import', {
     method: 'POST',
     body: JSON.stringify({ transactions, filename }),

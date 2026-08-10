@@ -3,10 +3,13 @@ import {
   parseExtratoFile,
   importExtratoTransactions,
   getExtratos,
-  Extrato,
-  CandidateTransaction,
+  deleteExtratoWithTransactions,
+  type Extrato,
+  type CandidateTransaction,
+  type ImportResult,
 } from '@/services/extratos'
-import { formatCurrency, formatDate, formatDateTime } from '@/lib/formatters'
+import { formatDateTime } from '@/lib/formatters'
+import { useRealtime } from '@/hooks/use-realtime'
 import {
   FileUp,
   FileSpreadsheet,
@@ -15,11 +18,23 @@ import {
   ArrowRight,
   Loader2,
   RefreshCw,
+  AlertCircle,
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog'
 import { useToast } from '@/hooks/use-toast'
 
 export default function Extratos() {
@@ -28,6 +43,9 @@ export default function Extratos() {
   const [importing, setImporting] = useState(false)
   const [candidates, setCandidateTransactions] = useState<CandidateTransaction[]>([])
   const [extratosHistory, setExtratosHistory] = useState<Extrato[]>([])
+  const [parseError, setParseError] = useState<string | null>(null)
+  const [importErrors, setImportErrors] = useState<string[]>([])
+  const [deletingId, setDeletingId] = useState<string | null>(null)
   const { toast } = useToast()
 
   const loadHistory = async () => {
@@ -43,15 +61,16 @@ export default function Extratos() {
     loadHistory()
   }, [])
 
+  useRealtime('extratos', () => {
+    loadHistory()
+  })
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setParseError(null)
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0]
       if (file.size > 10 * 1024 * 1024) {
-        toast({
-          title: 'Arquivo muito grande',
-          description: 'O tamanho máximo suportado é 10MB.',
-          variant: 'destructive',
-        })
+        setParseError('O tamanho máximo suportado é 10MB.')
         return
       }
       setSelectedFile(file)
@@ -61,18 +80,16 @@ export default function Extratos() {
   const handleProcessFile = async () => {
     if (!selectedFile) return
 
+    setParseError(null)
     setParsing(true)
     try {
-      const text = await selectedFile.text()
-      const res = await parseExtratoFile(text, selectedFile.name)
+      const res = await parseExtratoFile(selectedFile)
       setCandidateTransactions(res.transactions || [])
 
       if (!res.transactions || res.transactions.length === 0) {
-        toast({
-          title: 'Aviso',
-          description:
-            'Não foram encontradas movimentações claras no arquivo. Tente um formato mais limpo.',
-        })
+        setParseError(
+          'Não foram encontradas movimentações claras no arquivo. Tente um formato mais limpo.',
+        )
       } else {
         toast({
           title: 'Extrato Analisado',
@@ -80,11 +97,9 @@ export default function Extratos() {
         })
       }
     } catch (err: any) {
-      toast({
-        title: 'Erro ao processar',
-        description: err.message || 'Falha ao ler o extrato bancário.',
-        variant: 'destructive',
-      })
+      const message =
+        err?.message || err?.response?.error || 'Falha ao processar o extrato bancário.'
+      setParseError(message)
     } finally {
       setParsing(false)
     }
@@ -94,23 +109,49 @@ export default function Extratos() {
     if (candidates.length === 0 || !selectedFile) return
 
     setImporting(true)
+    setImportErrors([])
     try {
-      await importExtratoTransactions(candidates, selectedFile.name)
+      const result: ImportResult = await importExtratoTransactions(candidates, selectedFile.name)
       toast({
         title: 'Movimentações Salvas',
-        description: `${candidates.length} lançamentos foram adicionados à conta corrente.`,
+        description: `${result.importedCount} lançamentos foram adicionados à conta corrente.`,
       })
+      if (result.errors && result.errors.length > 0) {
+        setImportErrors(result.errors)
+        toast({
+          title: 'Avisos de Importação',
+          description: `${result.errors.length} linha(s) com problema foram puladas.`,
+          variant: 'destructive',
+        })
+      }
       setCandidateTransactions([])
       setSelectedFile(null)
       loadHistory()
     } catch (err: any) {
+      const message = err?.message || err?.response?.error || 'Falha ao gravar os lançamentos.'
+      setParseError(message)
+    } finally {
+      setImporting(false)
+    }
+  }
+
+  const handleDeleteExtrato = async (extrato: Extrato) => {
+    setDeletingId(extrato.id)
+    try {
+      await deleteExtratoWithTransactions(extrato.id, extrato.filename)
       toast({
-        title: 'Erro na Importação',
-        description: err.message || 'Falha ao gravar os lançamentos.',
+        title: 'Extrato excluído',
+        description: 'O registro e suas movimentações foram removidos.',
+      })
+      loadHistory()
+    } catch (err: any) {
+      toast({
+        title: 'Erro ao excluir',
+        description: err?.message || 'Falha ao excluir o extrato.',
         variant: 'destructive',
       })
     } finally {
-      setImporting(false)
+      setDeletingId(null)
     }
   }
 
@@ -128,7 +169,6 @@ export default function Extratos() {
 
   return (
     <div className="space-y-6 animate-fade-in">
-      {/* Upload Zone Section */}
       <Card className="border-slate-200 dark:border-slate-800">
         <CardHeader>
           <CardTitle className="text-base font-bold flex items-center gap-2">
@@ -136,14 +176,15 @@ export default function Extratos() {
             Importar Extrato Bancário
           </CardTitle>
           <CardDescription className="text-xs">
-            Envie extratos em PDF, TXT, CSV ou OFX para processamento e geração da conta corrente.
+            Envie extratos em PDF, OFX, Excel, CSV ou TXT para processamento e geração da conta
+            corrente.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-2xl p-8 text-center bg-slate-50/50 dark:bg-slate-900/50 hover:bg-indigo-50/30 dark:hover:bg-indigo-950/20 transition-all relative">
             <input
               type="file"
-              accept=".pdf,.csv,.txt,.ofx,.xlsx"
+              accept=".pdf,.csv,.txt,.ofx,.xlsx,.xls"
               onChange={handleFileChange}
               className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
             />
@@ -158,11 +199,18 @@ export default function Extratos() {
                     : 'Arraste seu arquivo de extrato aqui ou clique para selecionar'}
                 </p>
                 <p className="text-xs text-slate-500 mt-1">
-                  Suporta arquivos .PDF, .TXT, .CSV, .OFX de até 10MB
+                  Suporta PDF, OFX, Excel (XLSX), CSV e TXT de até 10MB
                 </p>
               </div>
             </div>
           </div>
+
+          {parseError && (
+            <div className="flex items-start gap-2 text-sm text-red-600 bg-red-50 dark:bg-red-950/30 dark:text-red-400 p-3 rounded-lg border border-red-200 dark:border-red-900">
+              <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+              <span>{parseError}</span>
+            </div>
+          )}
 
           {selectedFile && (
             <div className="flex items-center justify-between bg-slate-100 dark:bg-slate-800 p-4 rounded-xl">
@@ -196,20 +244,30 @@ export default function Extratos() {
               </Button>
             </div>
           )}
+
+          {importErrors.length > 0 && (
+            <div className="text-sm text-amber-700 bg-amber-50 dark:bg-amber-950/30 dark:text-amber-400 p-3 rounded-lg border border-amber-200 dark:border-amber-900">
+              <p className="font-semibold mb-1">Avisos durante a importação:</p>
+              <ul className="list-disc list-inside space-y-0.5">
+                {importErrors.map((err, i) => (
+                  <li key={i}>{err}</li>
+                ))}
+              </ul>
+            </div>
+          )}
         </CardContent>
       </Card>
 
-      {/* Candidate Preview Table */}
       {candidates.length > 0 && (
         <Card className="border-indigo-200 dark:border-indigo-900 shadow-md">
           <CardHeader className="flex flex-row items-center justify-between">
             <div>
               <CardTitle className="text-base font-bold text-indigo-950 dark:text-indigo-100 flex items-center gap-2">
                 <CheckCircle2 className="h-5 w-5 text-indigo-600" />
-                Pré-visualização dos Lançamentos Identificados ({candidates.length})
+                Pré-visualização dos Lançamentos ({candidates.length})
               </CardTitle>
               <CardDescription className="text-xs">
-                Revise os dados antes de gravar definitivamente na conta corrente da diretoria.
+                Revise os dados antes de gravar na conta corrente.
               </CardDescription>
             </div>
             <div className="flex items-center gap-2">
@@ -222,11 +280,7 @@ export default function Extratos() {
                 disabled={importing}
                 className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2"
               >
-                {importing ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  'Confirmar e Salvar Movimentações'
-                )}
+                {importing ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Confirmar e Salvar'}
               </Button>
             </div>
           </CardHeader>
@@ -306,13 +360,12 @@ export default function Extratos() {
         </Card>
       )}
 
-      {/* History of Processed Statements */}
       <Card className="border-slate-200 dark:border-slate-800">
         <CardHeader className="flex flex-row items-center justify-between">
           <div>
-            <CardTitle className="text-base font-bold">Histórico de Extratos Processados</CardTitle>
+            <CardTitle className="text-base font-bold">Histórico de Extratos</CardTitle>
             <CardDescription className="text-xs">
-              Lista de arquivos importados anteriormente no sistema
+              Arquivos importados anteriormente. Exclua um registro para reimportar o mesmo arquivo.
             </CardDescription>
           </div>
           <Button variant="ghost" size="sm" onClick={loadHistory} className="gap-2 text-xs">
@@ -328,9 +381,10 @@ export default function Extratos() {
             <table className="w-full text-sm text-left">
               <thead className="text-xs text-slate-500 uppercase bg-slate-50 dark:bg-slate-900 border-y border-slate-200 dark:border-slate-800">
                 <tr>
-                  <th className="px-6 py-3 font-semibold">Data do Envio</th>
-                  <th className="px-6 py-3 font-semibold">Nome do Arquivo</th>
-                  <th className="px-6 py-3 font-semibold text-right">Lançamentos Gerados</th>
+                  <th className="px-6 py-3 font-semibold">Data</th>
+                  <th className="px-6 py-3 font-semibold">Arquivo</th>
+                  <th className="px-6 py-3 font-semibold text-right">Lançamentos</th>
+                  <th className="px-6 py-3 font-semibold text-center">Ações</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -343,10 +397,47 @@ export default function Extratos() {
                       <FileSpreadsheet className="h-4 w-4 text-indigo-600" />
                       {ext.filename}
                     </td>
-                    <td className="px-6 py-3.5 text-right font-bold text-slate-700 dark:text-slate-300">
+                    <td className="px-6 py-3.5 text-right">
                       <Badge variant="secondary" className="bg-indigo-50 text-indigo-700 font-bold">
                         {ext.transactions_count} itens
                       </Badge>
+                    </td>
+                    <td className="px-6 py-3.5 text-center">
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            disabled={deletingId === ext.id}
+                            className="h-7 w-7 text-rose-500 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950"
+                          >
+                            {deletingId === ext.id ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              <Trash2 className="h-3.5 w-3.5" />
+                            )}
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Excluir extrato?</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              Isso removerá o registro de "{ext.filename}" e todas as{' '}
+                              {ext.transactions_count} movimentações associadas. Esta ação não pode
+                              ser desfeita.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                            <AlertDialogAction
+                              onClick={() => handleDeleteExtrato(ext)}
+                              className="bg-rose-600 hover:bg-rose-700 text-white"
+                            >
+                              Excluir
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
                     </td>
                   </tr>
                 ))}
