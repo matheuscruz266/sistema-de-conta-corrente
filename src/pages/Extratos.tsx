@@ -36,6 +36,8 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog'
 import { useToast } from '@/hooks/use-toast'
+import { cn } from '@/lib/utils'
+import { getErrorMessage } from '@/lib/pocketbase/errors'
 
 export default function Extratos() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
@@ -97,8 +99,7 @@ export default function Extratos() {
         })
       }
     } catch (err: any) {
-      const message =
-        err?.message || err?.response?.error || 'Falha ao processar o extrato bancário.'
+      const message = getErrorMessage(err) || 'Falha ao processar o extrato bancário.'
       setParseError(message)
     } finally {
       setParsing(false)
@@ -128,7 +129,7 @@ export default function Extratos() {
       setSelectedFile(null)
       loadHistory()
     } catch (err: any) {
-      const message = err?.message || err?.response?.error || 'Falha ao gravar os lançamentos.'
+      const message = getErrorMessage(err) || 'Falha ao gravar os lançamentos.'
       setParseError(message)
     } finally {
       setImporting(false)
@@ -325,7 +326,12 @@ export default function Extratos() {
                       <select
                         value={cand.type}
                         onChange={(e) => updateCandidate(idx, 'type', e.target.value)}
-                        className="h-8 text-xs rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2"
+                        className={cn(
+                          'h-8 text-xs rounded-md border px-2 font-medium',
+                          cand.type === 'entrada'
+                            ? 'border-emerald-300 text-emerald-700 bg-emerald-50 dark:border-emerald-700 dark:text-emerald-400 dark:bg-emerald-950'
+                            : 'border-rose-300 text-rose-700 bg-rose-50 dark:border-rose-700 dark:text-rose-400 dark:bg-rose-950',
+                        )}
                       >
                         <option value="entrada">Entrada</option>
                         <option value="saida">Saída</option>

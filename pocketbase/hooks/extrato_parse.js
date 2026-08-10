@@ -1,3 +1,4 @@
+// @deps pako@2.1.0
 routerAdd(
   'POST',
   '/backend/v1/extrato/parse',
@@ -9,95 +10,245 @@ routerAdd(
     const rawContent = body.content || ''
     const fileName = body.filename || 'extrato.txt'
     const format = (body.format || (fileName || '').split('.').pop() || '').toLowerCase()
-    const isBase64 = !!body.isBase64
 
     if (!rawContent || (typeof rawContent === 'string' && !rawContent.trim())) {
       return e.badRequestError('Arquivo vazio ou sem conteúdo legível')
     }
 
-    var textContent = ''
-
-    if (format === 'xlsx' || format === 'xls') {
-      return e.badRequestError(
-        'Formato Excel (.xlsx/.xls) não é suportado neste ambiente. Por favor, exporte o arquivo como CSV ou TXT e tente novamente.',
-      )
-    } else if (format === 'pdf') {
-      try {
-        var chars64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
-        var lookup = {}
-        for (var i = 0; i < 64; i++) lookup[chars64[i]] = i
-        var b64 = rawContent.replace(/[^A-Za-z0-9+/]/g, '')
-        var pdfBytes = []
-        for (var i2 = 0; i2 < b64.length; i2 += 4) {
-          var a = lookup[b64[i2]] || 0
-          var b = lookup[b64[i2 + 1]] || 0
-          var c = lookup[b64[i2 + 2]] || 0
-          var d = lookup[b64[i2 + 3]] || 0
-          var n = (a << 18) | (b << 12) | (c << 6) | d
-          pdfBytes.push((n >> 16) & 255)
-          if (b64[i2 + 2] !== '=' && i2 + 2 < b64.length) pdfBytes.push((n >> 8) & 255)
-          if (b64[i2 + 3] !== '=' && i2 + 3 < b64.length) pdfBytes.push(n & 255)
-        }
-        var binStr = ''
-        for (var i3 = 0; i3 < pdfBytes.length; i3++) binStr += String.fromCharCode(pdfBytes[i3])
-
-        var texts = []
-        var streamRegex = /stream\r?\n([\s\S]*?)endstream/g
-        var match
-        while ((match = streamRegex.exec(binStr)) !== null) {
-          var streamData = match[1]
-          var beforeStream = binStr.substring(Math.max(0, match.index - 300), match.index)
-          var isFlate = beforeStream.indexOf('FlateDecode') !== -1
-          if (isFlate) {
-            continue
-          }
-          var tjRegex = /\(((?:[^()\\]|\\.)*)\)\s*Tj/g
-          var m
-          while ((m = tjRegex.exec(streamData)) !== null) {
-            var dec = m[1]
-              .replace(/\\n/g, '\n')
-              .replace(/\\r/g, '\r')
-              .replace(/\\t/g, '\t')
-              .replace(/\\\(/g, '(')
-              .replace(/\\\)/g, ')')
-              .replace(/\\\\/g, '\\')
-            if (dec.trim()) texts.push(dec)
-          }
-          var tjArrRegex = /\[([\s\S]*?)\]\s*TJ/g
-          while ((m = tjArrRegex.exec(streamData)) !== null) {
-            var inner = m[1].match(/\(((?:[^()\\]|\\.)*)\)/g)
-            if (inner) {
-              var line = inner
-                .map(function (s) {
-                  return s
-                    .slice(1, -1)
-                    .replace(/\\n/g, '\n')
-                    .replace(/\\r/g, '\r')
-                    .replace(/\\t/g, '\t')
-                    .replace(/\\\(/g, '(')
-                    .replace(/\\\)/g, ')')
-                    .replace(/\\\\/g, '\\')
-                })
-                .join('')
-              if (line.trim()) texts.push(line)
-            }
-          }
-        }
-        textContent = texts.join('\n').trim()
-        if (!textContent || textContent.length < 10) {
-          return e.badRequestError(
-            'Não foi possível extrair texto do PDF. O arquivo pode estar protegido, criptografado, conter apenas streams compactados (FlateDecode) ou ser uma imagem escaneada. Tente exportar como CSV ou TXT.',
-          )
-        }
-      } catch (err) {
-        return e.badRequestError('Erro ao processar PDF: ' + (err.message || 'formato inválido'))
+    function decodeBase64(b64) {
+      var chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
+      var lookup = {}
+      for (var i = 0; i < 64; i++) lookup[chars[i]] = i
+      var clean = b64.replace(/[^A-Za-z0-9+/]/g, '')
+      var bytes = []
+      for (var j = 0; j < clean.length; j += 4) {
+        var a = lookup[clean[j]] || 0
+        var b = lookup[clean[j + 1]] || 0
+        var c = lookup[clean[j + 2]] || 0
+        var d = lookup[clean[j + 3]] || 0
+        var n = (a << 18) | (b << 12) | (c << 6) | d
+        bytes.push((n >> 16) & 255)
+        if (clean[j + 2] !== '=' && j + 2 < clean.length) bytes.push((n >> 8) & 255)
+        if (clean[j + 3] !== '=' && j + 3 < clean.length) bytes.push(n & 255)
       }
-    } else if (format === 'ofx') {
-      textContent = rawContent
-      var ofxTx = []
+      return bytes
+    }
+
+    function decodePdfString(s) {
+      return s
+        .replace(/\\n/g, '\n')
+        .replace(/\\r/g, '\r')
+        .replace(/\\t/g, '\t')
+        .replace(/\\\(/g, '(')
+        .replace(/\\\)/g, ')')
+        .replace(/\\\\/g, '\\')
+    }
+
+    function extractPdfText(streamData) {
+      var texts = []
+      var m
+      var tjRegex = /\(((?:[^()\\]|\\.)*)\)\s*Tj/g
+      while ((m = tjRegex.exec(streamData)) !== null) {
+        var dec = decodePdfString(m[1])
+        if (dec.trim()) texts.push(dec)
+      }
+      var tjArrRegex = /\[([\s\S]*?)\]\s*TJ/g
+      while ((m = tjArrRegex.exec(streamData)) !== null) {
+        var inner = m[1].match(/\(((?:[^()\\]|\\.)*)\)/g)
+        if (inner) {
+          var line = inner
+            .map(function (s) {
+              return decodePdfString(s.slice(1, -1))
+            })
+            .join('')
+          if (line.trim()) texts.push(line)
+        }
+      }
+      return texts
+    }
+
+    function parsePdfContent(b64) {
+      var pako = null
+      try {
+        pako = require('pako')
+      } catch (_) {}
+
+      var pdfBytes = decodeBase64(b64)
+      var binStr = ''
+      for (var i = 0; i < pdfBytes.length; i++) binStr += String.fromCharCode(pdfBytes[i])
+
+      var texts = []
+      var streamRegex = /stream\r?\n([\s\S]*?)endstream/g
+      var match
+      while ((match = streamRegex.exec(binStr)) !== null) {
+        var streamData = match[1]
+        var beforeStream = binStr.substring(Math.max(0, match.index - 300), match.index)
+        var isFlate = beforeStream.indexOf('FlateDecode') !== -1
+
+        if (isFlate && pako) {
+          try {
+            var streamBytes = []
+            for (var k = 0; k < streamData.length; k++) {
+              streamBytes.push(streamData.charCodeAt(k) & 255)
+            }
+            var inflated = pako.inflate(new Uint8Array(streamBytes))
+            var decompressed = ''
+            for (var l = 0; l < inflated.length; l++) {
+              decompressed += String.fromCharCode(inflated[l])
+            }
+            texts = texts.concat(extractPdfText(decompressed))
+          } catch (_) {}
+        } else if (!isFlate) {
+          texts = texts.concat(extractPdfText(streamData))
+        }
+      }
+
+      var asciiRegex = /[\x20-\x7E]{10,}/g
+      var am
+      while ((am = asciiRegex.exec(binStr)) !== null) {
+        var s = am[0]
+        if (s.indexOf('endobj') !== -1 || s.indexOf('stream') !== -1) continue
+        if (/[\d.,]+,\d{2}|\d{2}\/\d{2}\/\d{2,4}|R\$|PIX|DEP[Cc]|PAG|TRF|TRANSF/i.test(s)) {
+          texts.push(s.trim())
+        }
+      }
+
+      return texts.join('\n').trim()
+    }
+
+    function parseXlsxContent(b64) {
+      var pako = null
+      try {
+        pako = require('pako')
+      } catch (_) {}
+      if (!pako) return null
+
+      var bytes = decodeBase64(b64)
+      var entries = {}
+      var i = 0
+
+      while (i < bytes.length - 4) {
+        if (bytes[i] === 80 && bytes[i + 1] === 75 && bytes[i + 2] === 3 && bytes[i + 3] === 4) {
+          var compMethod = bytes[i + 8] | (bytes[i + 9] << 8)
+          var compSize =
+            bytes[i + 18] | (bytes[i + 19] << 8) | (bytes[i + 20] << 16) | (bytes[i + 21] << 24)
+          var nameLen = bytes[i + 26] | (bytes[i + 27] << 8)
+          var extraLen = bytes[i + 28] | (bytes[i + 29] << 8)
+          var nameStart = i + 30
+          var name = ''
+          for (var j = 0; j < nameLen; j++) name += String.fromCharCode(bytes[nameStart + j])
+          var dataStart = nameStart + nameLen + extraLen
+
+          if (compSize === 0) {
+            var nextPk = bytes.length
+            for (var ni = dataStart + 1; ni < bytes.length - 1; ni++) {
+              if (bytes[ni] === 80 && bytes[ni + 1] === 75) {
+                nextPk = ni
+                break
+              }
+            }
+            compSize = nextPk - dataStart
+          }
+
+          if (compMethod === 0) {
+            var str = ''
+            for (var k = dataStart; k < dataStart + compSize; k++)
+              str += String.fromCharCode(bytes[k])
+            entries[name] = str
+          } else if (compMethod === 8) {
+            try {
+              var compData = bytes.slice(dataStart, dataStart + compSize)
+              var inflated = null
+              try {
+                inflated = pako.inflate(new Uint8Array(compData))
+              } catch (_) {
+                inflated = pako.inflate(new Uint8Array(compData), { raw: true })
+              }
+              var str2 = ''
+              for (var l = 0; l < inflated.length; l++) str2 += String.fromCharCode(inflated[l])
+              entries[name] = str2
+            } catch (_) {}
+          }
+          i = dataStart + compSize
+        } else {
+          i++
+        }
+      }
+
+      var sharedStrings = []
+      var ssXml = entries['xl/sharedStrings.xml']
+      if (ssXml) {
+        var siRegex = /<si[^>]*>([\s\S]*?)<\/si>/g
+        var m
+        while ((m = siRegex.exec(ssXml)) !== null) {
+          var tMatches = m[1].match(/<t[^>]*>([\s\S]*?)<\/t>/g)
+          if (tMatches) {
+            sharedStrings.push(
+              tMatches
+                .map(function (t) {
+                  return t.replace(/<[^>]+>/g, '')
+                })
+                .join(''),
+            )
+          } else {
+            sharedStrings.push('')
+          }
+        }
+      }
+
+      var sheetXml = entries['xl/worksheets/sheet1.xml']
+      if (!sheetXml) {
+        var keys = Object.keys(entries)
+        for (var ki = 0; ki < keys.length; ki++) {
+          if (keys[ki].indexOf('xl/worksheets/sheet') === 0 && keys[ki].indexOf('.xml') !== -1) {
+            sheetXml = entries[keys[ki]]
+            break
+          }
+        }
+      }
+      if (!sheetXml) return null
+
+      var rows = []
+      var rowRegex = /<row[^>]*>([\s\S]*?)<\/row>/g
+      var rm
+      while ((rm = rowRegex.exec(sheetXml)) !== null) {
+        var rowData = []
+        var cellParts = rm[1].split(/<\/c>/)
+        for (var ci = 0; ci < cellParts.length; ci++) {
+          var cell = cellParts[ci]
+          if (cell.indexOf('<c') === -1) continue
+          var typeMatch = cell.match(/t="([^"]*)"/)
+          var cellType = typeMatch ? typeMatch[1] : ''
+          var valMatch = cell.match(/<v>([\s\S]*?)<\/v>/)
+          var val = valMatch ? valMatch[1] : ''
+          var isMatch = cell.match(/<is><t[^>]*>([\s\S]*?)<\/t>/)
+
+          if (cellType === 's' && val) {
+            rowData.push(sharedStrings[parseInt(val, 10)] || val)
+          } else if (cellType === 'inlineStr' && isMatch) {
+            rowData.push(isMatch[1])
+          } else if (val) {
+            rowData.push(val)
+          } else {
+            rowData.push('')
+          }
+        }
+        if (rowData.length > 0) rows.push(rowData)
+      }
+
+      if (rows.length === 0) return null
+      return rows
+        .map(function (row) {
+          return row.join('\t')
+        })
+        .join('\n')
+    }
+
+    function parseOfx(text) {
+      var transactions = []
       var stmtRegex = /<STMTTRN>\s*([\s\S]*?)(?=<STMTTRN>|<\/BANKTRANLIST>|<\/CCTRANLIST>|$)/g
       var sm
-      while ((sm = stmtRegex.exec(textContent)) !== null) {
+      while ((sm = stmtRegex.exec(text)) !== null) {
         var block = sm[1]
         function getVal(tag) {
           var r = block.match(new RegExp('<' + tag + '>\\s*([^<\\r\\n]*)', 'i'))
@@ -108,12 +259,22 @@ routerAdd(
         var trnAmt = getVal('TRNAMT')
         var name = getVal('NAME')
         var memo = getVal('MEMO')
-        var amount = Math.abs(parseFloat(trnAmt) || 0)
+
+        var rawAmount = parseFloat(trnAmt) || 0
+        var amount = Math.abs(rawAmount)
         if (amount <= 0) continue
-        ofxTx.push({
+
+        var type = rawAmount > 0 ? 'entrada' : 'saida'
+        if (trnType) {
+          var tt = trnType.toUpperCase()
+          if (tt === 'CREDIT') type = 'entrada'
+          else if (tt === 'DEBIT') type = 'saida'
+        }
+
+        transactions.push({
           description: name || memo || 'Transação',
           amount: amount,
-          type: trnType.toUpperCase() === 'CREDIT' ? 'entrada' : 'saida',
+          type: type,
           category: 'Outros',
           date:
             dtPosted.length >= 8
@@ -125,28 +286,30 @@ routerAdd(
               : new Date().toISOString().substring(0, 10),
         })
       }
-      if (ofxTx.length > 0) return e.json(200, { filename: fileName, transactions: ofxTx })
-    } else {
-      textContent = rawContent
+      return transactions
     }
 
-    if (!textContent.trim()) {
-      return e.badRequestError('Não foi possível identificar transações no conteúdo do arquivo')
-    }
-
-    try {
+    function parseWithAI(text) {
       var prompt =
         'Você é um especialista em processamento de extratos bancários brasileiros. ' +
         'Analise o texto a seguir extraído de um extrato bancário e extraia todas as transações em formato JSON válido.\n\n' +
         'Cada item no array JSON deve possuir exatamente:\n' +
-        '- "description": string (descrição limpa)\n' +
+        '- "description": string (descrição limpa da transação)\n' +
         '- "amount": number (valor numérico positivo)\n' +
         '- "type": "entrada" ou "saida"\n' +
         '- "category": string (sugira uma entre: "Receita Diretoria", "Aporte Financeiro", "Honorários Diretoria", "Serviços Terceirizados", "Despesas Operacionais", "Aluguel & Infraestrutura", "Impostos & Taxas", "Outros")\n' +
         '- "date": string no formato YYYY-MM-DD\n\n' +
+        'IMPORTANTE — Classificação do tipo (entrada/saida):\n' +
+        '- "entrada" = receita, crédito, depósito, transferência recebida, pix recebido, pagamento recebido\n' +
+        '- "saida" = despesa, débito, pagamento, saque, transferência enviada, pix enviado\n' +
+        '- Se houver coluna de tipo no CSV/Excel, use-a como referência principal\n' +
+        '- Se houver colunas separadas de crédito/débito: crédito = "entrada", débito = "saida"\n' +
+        '- Se houver sinal no valor: positivo = "entrada", negativo = "saida"\n' +
+        '- Palavras-chave de entrada: depósito, crédito, recebimento, transferência recebida, pix recebido, repasse, aporte, rendimento\n' +
+        '- Palavras-chave de saída: pagamento, débito, transferência enviada, pix enviado, tarifa, taxa, saque, compra, despesa\n\n' +
         'Retorne APENAS o JSON puro (array de objetos), sem marcações markdown ou introduções.\n\n' +
         'Texto do extrato:\n' +
-        textContent.substring(0, 30000)
+        text.substring(0, 30000)
 
       var aiRes = $ai.chat({
         model: 'fast',
@@ -173,25 +336,87 @@ routerAdd(
           .trim()
       }
 
-      var parsedTransactions = []
+      var parsed = []
       try {
-        parsedTransactions = JSON.parse(reply)
+        parsed = JSON.parse(reply)
       } catch (_) {
         var jsonMatch = reply.match(/\[[\s\S]*\]/)
         if (jsonMatch) {
           try {
-            parsedTransactions = JSON.parse(jsonMatch[0])
+            parsed = JSON.parse(jsonMatch[0])
           } catch (__) {}
         }
       }
+      return parsed
+    }
 
-      if (!Array.isArray(parsedTransactions) || parsedTransactions.length === 0) {
+    if (format === 'ofx') {
+      var ofxTx = parseOfx(rawContent)
+      if (ofxTx.length > 0) return e.json(200, { filename: fileName, transactions: ofxTx })
+      return e.badRequestError(
+        'Nenhuma transação OFX encontrada. Verifique se o arquivo contém blocos <STMTTRN> válidos.',
+      )
+    }
+
+    if (format === 'pdf') {
+      var pdfText = parsePdfContent(rawContent)
+      if (!pdfText || pdfText.length < 10) {
         return e.badRequestError(
-          'Não foi possível identificar transações no arquivo. Verifique se o conteúdo está no formato correto.',
+          'Não foi possível extrair texto do PDF. O arquivo pode estar protegido, criptografado ou ser uma imagem escaneada. Tente exportar como CSV ou TXT.',
         )
       }
+      try {
+        var pdfTx = parseWithAI(pdfText)
+        if (!Array.isArray(pdfTx) || pdfTx.length === 0) {
+          return e.badRequestError(
+            'Nenhuma transação identificada no PDF. O conteúdo pode não ser um extrato bancário reconhecível.',
+          )
+        }
+        return e.json(200, { filename: fileName, transactions: pdfTx })
+      } catch (err) {
+        return e.json(500, {
+          error: 'Erro ao processar PDF com IA: ' + (err.message || 'erro desconhecido'),
+        })
+      }
+    }
 
-      return e.json(200, { filename: fileName, transactions: parsedTransactions })
+    if (format === 'xlsx' || format === 'xls') {
+      var xlsxText = parseXlsxContent(rawContent)
+      if (!xlsxText) {
+        return e.badRequestError(
+          'Não foi possível ler o arquivo Excel. Verifique se o arquivo não está corrompido ou protegido. Tente exportar como CSV.',
+        )
+      }
+      try {
+        var xlsxTx = parseWithAI(xlsxText)
+        if (!Array.isArray(xlsxTx) || xlsxTx.length === 0) {
+          return e.badRequestError(
+            'Nenhuma transação identificada no arquivo Excel. Verifique se o conteúdo é um extrato bancário.',
+          )
+        }
+        return e.json(200, { filename: fileName, transactions: xlsxTx })
+      } catch (err) {
+        return e.json(500, {
+          error: 'Erro ao processar Excel com IA: ' + (err.message || 'erro desconhecido'),
+        })
+      }
+    }
+
+    var textContent = rawContent
+    if (!textContent.trim()) {
+      return e.badRequestError(
+        'Formato não reconhecido. Envie um arquivo PDF, OFX, Excel, CSV ou TXT.',
+      )
+    }
+
+    try {
+      var txResult = parseWithAI(textContent)
+      if (!Array.isArray(txResult) || txResult.length === 0) {
+        return e.badRequestError(
+          'Nenhuma transação identificada no arquivo. Verifique se o conteúdo está no formato correto (CSV, TXT ou OFX).',
+        )
+      }
+      return e.json(200, { filename: fileName, transactions: txResult })
     } catch (err) {
       return e.json(500, {
         error: 'Erro ao processar o extrato com IA: ' + (err.message || 'erro desconhecido'),
