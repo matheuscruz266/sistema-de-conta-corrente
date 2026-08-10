@@ -1,4 +1,3 @@
-// @deps xlsx@0.18.5, pako@2.1.0
 routerAdd(
   'POST',
   '/backend/v1/extrato/parse',
@@ -19,20 +18,9 @@ routerAdd(
     var textContent = ''
 
     if (format === 'xlsx' || format === 'xls') {
-      try {
-        var XLSX = require('xlsx')
-        var workbook = XLSX.read(rawContent, { type: 'base64' })
-        var firstSheetName = workbook.SheetNames[0]
-        if (!firstSheetName) return e.badRequestError('Planilha Excel sem abas ou vazia')
-        var sheet = workbook.Sheets[firstSheetName]
-        textContent = XLSX.utils.sheet_to_csv(sheet, { FS: ';', RS: '\n' })
-        if (!textContent.trim())
-          return e.badRequestError('A planilha Excel não contém dados legíveis')
-      } catch (err) {
-        return e.badRequestError(
-          'Erro ao ler arquivo Excel: ' + (err.message || 'formato inválido'),
-        )
-      }
+      return e.badRequestError(
+        'Formato Excel (.xlsx/.xls) não é suportado neste ambiente. Por favor, exporte o arquivo como CSV ou TXT e tente novamente.',
+      )
     } else if (format === 'pdf') {
       try {
         var chars64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
@@ -61,15 +49,7 @@ routerAdd(
           var beforeStream = binStr.substring(Math.max(0, match.index - 300), match.index)
           var isFlate = beforeStream.indexOf('FlateDecode') !== -1
           if (isFlate) {
-            try {
-              var pako = require('pako')
-              var sBytes = new Uint8Array(streamData.length)
-              for (var si = 0; si < streamData.length; si++) sBytes[si] = streamData.charCodeAt(si)
-              var inflated = pako.inflate(sBytes)
-              streamData = ''
-              for (var ii = 0; ii < inflated.length; ii++)
-                streamData += String.fromCharCode(inflated[ii])
-            } catch (_) {}
+            continue
           }
           var tjRegex = /\(((?:[^()\\]|\\.)*)\)\s*Tj/g
           var m
@@ -106,7 +86,7 @@ routerAdd(
         textContent = texts.join('\n').trim()
         if (!textContent || textContent.length < 10) {
           return e.badRequestError(
-            'Não foi possível extrair texto do PDF. O arquivo pode estar protegido, criptografado ou ser uma imagem escaneada. Tente exportar como CSV ou TXT.',
+            'Não foi possível extrair texto do PDF. O arquivo pode estar protegido, criptografado, conter apenas streams compactados (FlateDecode) ou ser uma imagem escaneada. Tente exportar como CSV ou TXT.',
           )
         }
       } catch (err) {
