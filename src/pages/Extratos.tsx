@@ -38,8 +38,10 @@ import {
 import { useToast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
 import { getErrorMessage } from '@/lib/pocketbase/errors'
+import { useProjectStore } from '@/stores/use-project-store'
 
 export default function Extratos() {
+  const { currentProject } = useProjectStore()
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [parsing, setParsing] = useState(false)
   const [importing, setImporting] = useState(false)
@@ -51,8 +53,12 @@ export default function Extratos() {
   const { toast } = useToast()
 
   const loadHistory = async () => {
+    if (!currentProject) {
+      setExtratosHistory([])
+      return
+    }
     try {
-      const list = await getExtratos()
+      const list = await getExtratos(`project = "${currentProject.id}"`)
       setExtratosHistory(list)
     } catch {
       // Ignore
@@ -61,7 +67,7 @@ export default function Extratos() {
 
   useEffect(() => {
     loadHistory()
-  }, [])
+  }, [currentProject?.id])
 
   useRealtime('extratos', () => {
     loadHistory()
@@ -113,7 +119,11 @@ export default function Extratos() {
     setImporting(true)
     setImportErrors([])
     try {
-      const result: ImportResult = await importExtratoTransactions(candidates, selectedFile.name)
+      const result: ImportResult = await importExtratoTransactions(
+        candidates,
+        selectedFile.name,
+        currentProject?.id,
+      )
       if (!result.success && result.importedCount === 0) {
         setParseError(
           'Nenhuma movimentação pôde ser importada. Verifique os dados e tente novamente.',

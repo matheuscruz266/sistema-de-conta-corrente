@@ -6,6 +6,7 @@ import { AuthProvider } from '@/hooks/use-auth'
 import { ProtectedRoute } from '@/components/ProtectedRoute'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import Layout from '@/components/Layout'
+import { ProjectProvider } from '@/stores/use-project-store'
 
 import Login from '@/pages/Login'
 import Signup from '@/pages/Signup'
@@ -32,7 +33,9 @@ const App = () => (
             <Route
               element={
                 <ProtectedRoute>
-                  <Layout />
+                  <ProjectProvider>
+                    <Layout />
+                  </ProjectProvider>
                 </ProtectedRoute>
               }
             >

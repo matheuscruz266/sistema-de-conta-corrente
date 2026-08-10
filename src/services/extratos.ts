@@ -6,6 +6,7 @@ export interface Extrato {
   filename: string
   file?: string
   transactions_count: number
+  project?: string
   created: string
   updated: string
 }
@@ -25,9 +26,10 @@ export interface ImportResult {
   errors?: string[]
 }
 
-export const getExtratos = async (): Promise<Extrato[]> => {
+export const getExtratos = async (filter?: string): Promise<Extrato[]> => {
   return pb.collection('extratos').getFullList<Extrato>({
     sort: '-created',
+    filter,
   })
 }
 
@@ -87,10 +89,11 @@ export const parseExtratoFile = async (
 export const importExtratoTransactions = async (
   transactions: CandidateTransaction[],
   filename: string,
+  projectId?: string,
 ): Promise<ImportResult> => {
   const res = await pb.send('/backend/v1/extrato/import', {
     method: 'POST',
-    body: JSON.stringify({ transactions, filename }),
+    body: JSON.stringify({ transactions, filename, projectId }),
     headers: { 'Content-Type': 'application/json' },
   })
   return {

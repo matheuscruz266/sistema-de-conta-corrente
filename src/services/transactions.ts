@@ -9,6 +9,7 @@ export interface Transaction {
   category: string
   date: string
   source_file?: string
+  project?: string
   created: string
   updated: string
 }

@@ -16,6 +16,7 @@ import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet'
 import { formatDate } from '@/lib/formatters'
+import { ProjectSwitcher } from '@/components/ProjectSwitcher'
 
 export default function Layout() {
   const { user, signOut } = useAuth()
@@ -145,6 +146,7 @@ export default function Layout() {
           </div>
 
           <div className="flex items-center gap-4">
+            <ProjectSwitcher />
             <button className="relative p-2 rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
               <Bell className="h-5 w-5" />
               <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-indigo-600" />

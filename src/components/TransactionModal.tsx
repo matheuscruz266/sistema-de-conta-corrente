@@ -20,6 +20,7 @@ import { createTransaction, updateTransaction, Transaction } from '@/services/tr
 import { getCategories, Category } from '@/services/categories'
 import { useToast } from '@/hooks/use-toast'
 import pb from '@/lib/pocketbase/client'
+import { useProjectStore } from '@/stores/use-project-store'
 
 interface TransactionModalProps {
   isOpen: boolean
@@ -42,6 +43,7 @@ export function TransactionModal({
   const [categories, setCategories] = useState<Category[]>([])
   const [submitting, setSubmitting] = useState(false)
   const { toast } = useToast()
+  const { currentProject } = useProjectStore()
 
   useEffect(() => {
     if (isOpen) {
@@ -87,6 +89,7 @@ export function TransactionModal({
         type,
         category,
         date: new Date(date).toISOString(),
+        project: currentProject?.id,
       }
 
       if (transactionToEdit) {

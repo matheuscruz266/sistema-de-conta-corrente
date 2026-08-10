@@ -8,6 +8,7 @@ routerAdd(
     const body = e.requestInfo().body || {}
     const transactions = body.transactions || []
     const fileName = body.filename || 'extrato_importado.pdf'
+    const projectId = body.projectId || ''
 
     if (!Array.isArray(transactions) || transactions.length === 0) {
       return e.badRequestError('Nenhuma movimentação para importar')
@@ -17,7 +18,7 @@ routerAdd(
     try {
       var userExtratos = $app.findRecordsByFilter(
         'extratos',
-        "user = '" + userId + "'",
+        "user = '" + userId + "' && project = '" + projectId + "'",
         '-created',
         100,
         0,
@@ -62,6 +63,7 @@ routerAdd(
         }
         rec.set('date', dtStr)
         rec.set('source_file', fileName)
+        rec.set('project', projectId)
         $app.save(rec)
         importedCount++
       } catch (err) {
@@ -77,6 +79,7 @@ routerAdd(
     extratoRec.set('user', userId)
     extratoRec.set('filename', fileName)
     extratoRec.set('transactions_count', importedCount)
+    extratoRec.set('project', projectId)
     $app.save(extratoRec)
 
     return e.json(200, {

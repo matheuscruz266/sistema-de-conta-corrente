@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { getTransactions, Transaction } from '@/services/transactions'
 import { formatCurrency, formatDate } from '@/lib/formatters'
@@ -16,6 +16,10 @@ import {
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { useProjectStore } from '@/stores/use-project-store'
+import { exportDashboardAsPNG } from '@/lib/export-dashboard'
+import { useToast } from '@/hooks/use-toast'
+import { Download, Loader2 } from 'lucide-react'
 import {
   ResponsiveContainer,
   AreaChart,
@@ -43,12 +47,22 @@ const CHART_COLORS = [
 ]
 
 export default function Dashboard() {
+  const { currentProject } = useProjectStore()
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [loading, setLoading] = useState(true)
+  const [exporting, setExporting] = useState(false)
+  const dashboardRef = useRef<HTMLDivElement>(null)
+  const { toast } = useToast()
 
   const loadData = async () => {
+    if (!currentProject) {
+      setTransactions([])
+      setLoading(false)
+      return
+    }
     try {
-      const data = await getTransactions(undefined, 'date')
+      const filter = `project = "${currentProject.id}"`
+      const data = await getTransactions(filter, 'date')
       setTransactions(Array.isArray(data) ? data : [])
     } catch {
       // Handled
@@ -59,7 +73,7 @@ export default function Dashboard() {
 
   useEffect(() => {
     loadData()
-  }, [])
+  }, [currentProject?.id])
 
   useRealtime('transactions', () => {
     loadData()
@@ -146,6 +160,32 @@ export default function Dashboard() {
     }
   }, [transactions])
 
+  const handleExport = async () => {
+    if (!dashboardRef.current || !currentProject) return
+    setExporting(true)
+    try {
+      await exportDashboardAsPNG(
+        dashboardRef.current,
+        currentProject.name,
+        formatDate(new Date().toISOString()),
+        [
+          { label: 'Saldo Atual', value: formatCurrency(currentBalance), color: '#6366f1' },
+          { label: 'Entradas', value: formatCurrency(totalIn), color: '#10b981' },
+          { label: 'Saídas', value: formatCurrency(totalOut), color: '#ef4444' },
+          { label: 'Movimentações', value: String(transactions.length), color: '#64748b' },
+        ],
+      )
+    } catch (err: any) {
+      toast({
+        title: 'Erro na exportação',
+        description: err?.message || 'Não foi possível gerar o relatório.',
+        variant: 'destructive',
+      })
+    } finally {
+      setExporting(false)
+    }
+  }
+
   if (loading) {
     return (
       <div className="space-y-6">
@@ -159,7 +199,7 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="space-y-6 animate-fade-in">
+    <div ref={dashboardRef} className="space-y-6 animate-fade-in">
       {/* Action Header */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-white dark:bg-slate-950 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
         <div>
@@ -183,6 +223,19 @@ export default function Dashboard() {
               Nova Lançamento
             </Button>
           </Link>
+          <Button
+            onClick={handleExport}
+            disabled={exporting || transactions.length === 0}
+            variant="outline"
+            className="w-full sm:w-auto gap-2"
+          >
+            {exporting ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Download className="h-4 w-4" />
+            )}
+            {exporting ? 'Exportando...' : 'Exportar'}
+          </Button>
         </div>
       </div>
 

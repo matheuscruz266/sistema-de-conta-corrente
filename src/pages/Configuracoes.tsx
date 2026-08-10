@@ -18,9 +18,11 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { useToast } from '@/hooks/use-toast'
+import { useProjectStore } from '@/stores/use-project-store'
 
 export default function Configuracoes() {
   const { user } = useAuth()
+  const { currentProject } = useProjectStore()
   const [categories, setCategories] = useState<Category[]>([])
   const [newCatName, setNewCatName] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -29,8 +31,12 @@ export default function Configuracoes() {
   const { toast } = useToast()
 
   const loadCategories = async () => {
+    if (!currentProject) {
+      setCategories([])
+      return
+    }
     try {
-      const list = await getCategories()
+      const list = await getCategories(`project = "${currentProject.id}"`)
       setCategories(list)
     } catch {
       // Ignore
@@ -39,7 +45,7 @@ export default function Configuracoes() {
 
   useEffect(() => {
     loadCategories()
-  }, [])
+  }, [currentProject?.id])
 
   useRealtime('categories', () => {
     loadCategories()
@@ -51,7 +57,7 @@ export default function Configuracoes() {
 
     setSubmitting(true)
     try {
-      await createCategory({ name: newCatName.trim() })
+      await createCategory({ name: newCatName.trim(), project: currentProject?.id })
       toast({
         title: 'Categoria criada',
         description: `A categoria "${newCatName}" foi adicionada.`,

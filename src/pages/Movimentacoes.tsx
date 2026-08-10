@@ -27,8 +27,10 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { useToast } from '@/hooks/use-toast'
+import { useProjectStore } from '@/stores/use-project-store'
 
 export default function Movimentacoes() {
+  const { currentProject } = useProjectStore()
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [categories, setCategories] = useState<Category[]>([])
   const [search, setSearch] = useState('')
@@ -42,8 +44,18 @@ export default function Movimentacoes() {
   const { toast } = useToast()
 
   const loadData = async () => {
+    if (!currentProject) {
+      setTransactions([])
+      setCategories([])
+      setLoading(false)
+      return
+    }
     try {
-      const [txs, cats] = await Promise.all([getTransactions(undefined, '-date'), getCategories()])
+      const filter = `project = "${currentProject.id}"`
+      const [txs, cats] = await Promise.all([
+        getTransactions(filter, '-date'),
+        getCategories(filter),
+      ])
       setTransactions(txs)
       setCategories(cats)
     } catch {
@@ -55,7 +67,7 @@ export default function Movimentacoes() {
 
   useEffect(() => {
     loadData()
-  }, [])
+  }, [currentProject?.id])
 
   useRealtime('transactions', () => {
     loadData()
