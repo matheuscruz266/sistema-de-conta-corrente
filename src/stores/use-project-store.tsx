@@ -79,6 +79,14 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     isAuthenticated,
   )
 
+  useRealtime(
+    'project_members',
+    () => {
+      if (isAuthenticated) loadProjects()
+    },
+    isAuthenticated,
+  )
+
   const handleSetCurrent = (id: string) => {
     setCurrentProjectId(id)
     localStorage.setItem('currentProjectId', id)

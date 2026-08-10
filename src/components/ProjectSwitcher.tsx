@@ -105,7 +105,7 @@ export function ProjectSwitcher() {
           <DropdownMenuItem onClick={handleNew} className="gap-2 cursor-pointer text-indigo-600">
             <Plus className="h-4 w-4" /> Novo Projeto
           </DropdownMenuItem>
-          {currentProject && (
+          {currentProject?.isOwner && (
             <>
               <DropdownMenuItem onClick={handleEdit} className="gap-2 cursor-pointer">
                 <Edit className="h-4 w-4" /> Editar Projeto

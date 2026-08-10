@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-08-10T15:57:07.194Z",
+  "generatedAt": "2026-08-10T16:39:33.913Z",
   "collections": [
     {
       "name": "users",
@@ -48,11 +48,11 @@
       "name": "transactions",
       "type": "base",
       "apiRules": {
-        "list": "@request.auth.id != '' && user = @request.auth.id",
-        "view": "@request.auth.id != '' && user = @request.auth.id",
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
         "create": "@request.auth.id != ''",
-        "update": "@request.auth.id != '' && user = @request.auth.id",
-        "delete": "@request.auth.id != '' && user = @request.auth.id"
+        "update": "@request.auth.id != '' && (user = @request.auth.id || project.user = @request.auth.id)",
+        "delete": "@request.auth.id != '' && (user = @request.auth.id || project.user = @request.auth.id)"
       },
       "fields": [
         {
@@ -133,8 +133,8 @@
       "name": "extratos",
       "type": "base",
       "apiRules": {
-        "list": "@request.auth.id != '' && user = @request.auth.id",
-        "view": "@request.auth.id != '' && user = @request.auth.id",
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
         "create": "@request.auth.id != ''",
         "update": "@request.auth.id != '' && user = @request.auth.id",
         "delete": "@request.auth.id != '' && user = @request.auth.id"
@@ -197,8 +197,8 @@
       "name": "categories",
       "type": "base",
       "apiRules": {
-        "list": "@request.auth.id != '' && user = @request.auth.id",
-        "view": "@request.auth.id != '' && user = @request.auth.id",
+        "list": "@request.auth.id != ''",
+        "view": "@request.auth.id != ''",
         "create": "@request.auth.id != ''",
         "update": "@request.auth.id != '' && user = @request.auth.id",
         "delete": "@request.auth.id != '' && user = @request.auth.id"
@@ -311,6 +311,59 @@
       "indexes": [
         "CREATE INDEX idx_projects_user ON projects (user)",
         "CREATE INDEX idx_projects_name ON projects (name)"
+      ]
+    },
+    {
+      "name": "project_members",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != '' && (project.user = @request.auth.id || user = @request.auth.id)",
+        "view": "@request.auth.id != '' && (project.user = @request.auth.id || user = @request.auth.id)",
+        "create": "@request.auth.id != '' && project.user = @request.auth.id",
+        "update": "@request.auth.id != '' && project.user = @request.auth.id",
+        "delete": "@request.auth.id != '' && project.user = @request.auth.id"
+      },
+      "fields": [
+        {
+          "name": "user",
+          "type": "relation",
+          "required": true,
+          "system": false,
+          "collectionRef": "users"
+        },
+        {
+          "name": "project",
+          "type": "relation",
+          "required": true,
+          "system": false,
+          "collectionRef": "projects"
+        },
+        {
+          "name": "role",
+          "type": "select",
+          "required": true,
+          "system": false,
+          "selectValues": ["lancador", "administrador"]
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": [
+        "CREATE INDEX idx_project_members_user ON project_members (user)",
+        "CREATE INDEX idx_project_members_project ON project_members (project)",
+        "CREATE UNIQUE INDEX idx_project_members_user_project ON project_members (user, project)"
       ]
     }
   ]

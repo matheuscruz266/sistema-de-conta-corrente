@@ -47,7 +47,8 @@ export function TransactionModal({
 
   useEffect(() => {
     if (isOpen) {
-      getCategories()
+      const catFilter = currentProject ? `project = "${currentProject.id}"` : ''
+      getCategories(catFilter)
         .then(setCategories)
         .catch(() => {})
       if (transactionToEdit) {

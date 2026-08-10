@@ -19,6 +19,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import { useToast } from '@/hooks/use-toast'
 import { useProjectStore } from '@/stores/use-project-store'
+import { ProjectMembers } from '@/components/ProjectMembers'
 
 export default function Configuracoes() {
   const { user } = useAuth()
@@ -182,6 +183,9 @@ export default function Configuracoes() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Members Management */}
+      <ProjectMembers />
 
       {/* Security notice */}
       <Card className="border-indigo-100 bg-indigo-50/40 dark:bg-indigo-950/20 dark:border-indigo-900">

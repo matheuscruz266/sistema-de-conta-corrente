@@ -8,12 +8,12 @@ export interface Project {
   color?: string
   created: string
   updated: string
+  isOwner?: boolean
+  role?: 'lancador' | 'administrador'
 }
 
 export const getProjects = async (): Promise<Project[]> => {
-  return pb.collection('projects').getFullList<Project>({
-    sort: 'name',
-  })
+  return pb.send('/backend/v1/projects/accessible', { method: 'GET' })
 }
 
 export const getProject = async (id: string): Promise<Project> => {
