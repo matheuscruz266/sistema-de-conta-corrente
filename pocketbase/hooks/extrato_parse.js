@@ -1,4 +1,3 @@
-// @deps pako@2.1.0
 routerAdd(
   'POST',
   '/backend/v1/extrato/parse',
@@ -68,11 +67,6 @@ routerAdd(
     }
 
     function parsePdfContent(b64) {
-      var pako = null
-      try {
-        pako = require('pako')
-      } catch (_) {}
-
       var pdfBytes = decodeBase64(b64)
       var binStr = ''
       for (var i = 0; i < pdfBytes.length; i++) binStr += String.fromCharCode(pdfBytes[i])
@@ -85,20 +79,7 @@ routerAdd(
         var beforeStream = binStr.substring(Math.max(0, match.index - 300), match.index)
         var isFlate = beforeStream.indexOf('FlateDecode') !== -1
 
-        if (isFlate && pako) {
-          try {
-            var streamBytes = []
-            for (var k = 0; k < streamData.length; k++) {
-              streamBytes.push(streamData.charCodeAt(k) & 255)
-            }
-            var inflated = pako.inflate(new Uint8Array(streamBytes))
-            var decompressed = ''
-            for (var l = 0; l < inflated.length; l++) {
-              decompressed += String.fromCharCode(inflated[l])
-            }
-            texts = texts.concat(extractPdfText(decompressed))
-          } catch (_) {}
-        } else if (!isFlate) {
+        if (!isFlate) {
           texts = texts.concat(extractPdfText(streamData))
         }
       }
@@ -117,12 +98,10 @@ routerAdd(
     }
 
     function parseXlsxContent(b64) {
-      var pako = null
-      try {
-        pako = require('pako')
-      } catch (_) {}
-      if (!pako) return null
+      return null
+    }
 
+    function parseXlsxContentLegacy(b64) {
       var bytes = decodeBase64(b64)
       var entries = {}
       var i = 0
@@ -155,19 +134,6 @@ routerAdd(
             for (var k = dataStart; k < dataStart + compSize; k++)
               str += String.fromCharCode(bytes[k])
             entries[name] = str
-          } else if (compMethod === 8) {
-            try {
-              var compData = bytes.slice(dataStart, dataStart + compSize)
-              var inflated = null
-              try {
-                inflated = pako.inflate(new Uint8Array(compData))
-              } catch (_) {
-                inflated = pako.inflate(new Uint8Array(compData), { raw: true })
-              }
-              var str2 = ''
-              for (var l = 0; l < inflated.length; l++) str2 += String.fromCharCode(inflated[l])
-              entries[name] = str2
-            } catch (_) {}
           }
           i = dataStart + compSize
         } else {
