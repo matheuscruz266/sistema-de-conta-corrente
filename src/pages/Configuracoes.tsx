@@ -1,11 +1,22 @@
 import { useState, useEffect } from 'react'
 import { getCategories, createCategory, deleteCategory, Category } from '@/services/categories'
 import { useAuth } from '@/hooks/use-auth'
+import { useRealtime } from '@/hooks/use-realtime'
 import { Plus, Trash2, Tag, ShieldCheck, User } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { useToast } from '@/hooks/use-toast'
 
 export default function Configuracoes() {
@@ -13,6 +24,8 @@ export default function Configuracoes() {
   const [categories, setCategories] = useState<Category[]>([])
   const [newCatName, setNewCatName] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [deleteTarget, setDeleteTarget] = useState<Category | null>(null)
+  const [deleting, setDeleting] = useState(false)
   const { toast } = useToast()
 
   const loadCategories = async () => {
@@ -27,6 +40,10 @@ export default function Configuracoes() {
   useEffect(() => {
     loadCategories()
   }, [])
+
+  useRealtime('categories', () => {
+    loadCategories()
+  })
 
   const handleAddCategory = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -52,14 +69,26 @@ export default function Configuracoes() {
     }
   }
 
-  const handleDeleteCategory = async (id: string, name: string) => {
-    if (!confirm(`Deseja remover a categoria "${name}"?`)) return
+  const handleDeleteCategory = (cat: Category) => {
+    setDeleteTarget(cat)
+  }
+
+  const confirmDeleteCategory = async () => {
+    if (!deleteTarget) return
+    setDeleting(true)
     try {
-      await deleteCategory(id)
-      toast({ title: 'Categoria removida' })
+      await deleteCategory(deleteTarget.id)
+      toast({ title: 'Categoria removida', description: `"${deleteTarget.name}" foi excluída.` })
+      setDeleteTarget(null)
       loadCategories()
     } catch {
-      toast({ title: 'Erro ao excluir', variant: 'destructive' })
+      toast({
+        title: 'Erro ao excluir',
+        description: 'Não foi possível excluir a categoria. Tente novamente.',
+        variant: 'destructive',
+      })
+    } finally {
+      setDeleting(false)
     }
   }
 
@@ -137,7 +166,7 @@ export default function Configuracoes() {
                 <Button
                   variant="ghost"
                   size="icon"
-                  onClick={() => handleDeleteCategory(cat.id, cat.name)}
+                  onClick={() => handleDeleteCategory(cat)}
                   className="h-7 w-7 text-slate-400 hover:text-rose-600"
                 >
                   <Trash2 className="h-3.5 w-3.5" />
@@ -161,6 +190,32 @@ export default function Configuracoes() {
           </div>
         </CardContent>
       </Card>
+
+      <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir categoria?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {deleteTarget && (
+                <>
+                  Tem certeza que deseja excluir a categoria <strong>"{deleteTarget.name}"</strong>?
+                  Esta ação não pode ser desfeita.
+                </>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDeleteCategory}
+              disabled={deleting}
+              className="bg-rose-600 hover:bg-rose-700 text-white"
+            >
+              {deleting ? 'Excluindo...' : 'Excluir'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

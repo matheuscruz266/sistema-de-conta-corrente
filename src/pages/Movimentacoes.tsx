@@ -16,6 +16,16 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { useToast } from '@/hooks/use-toast'
 
 export default function Movimentacoes() {
@@ -27,6 +37,8 @@ export default function Movimentacoes() {
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null)
   const [loading, setLoading] = useState(true)
+  const [deleteTarget, setDeleteTarget] = useState<Transaction | null>(null)
+  const [deleting, setDeleting] = useState(false)
   const { toast } = useToast()
 
   const loadData = async () => {
@@ -68,18 +80,27 @@ export default function Movimentacoes() {
     return { inSum, outSum, net: inSum - outSum }
   }, [filteredTransactions])
 
-  const handleDelete = async (id: string) => {
-    if (!confirm('Deseja realmente excluir esta movimentação?')) return
+  const handleDelete = (tx: Transaction) => {
+    setDeleteTarget(tx)
+  }
+
+  const confirmDelete = async () => {
+    if (!deleteTarget) return
+    setDeleting(true)
     try {
-      await deleteTransaction(id)
+      await deleteTransaction(deleteTarget.id)
       toast({ title: 'Excluído', description: 'Movimentação removida da conta corrente.' })
+      setDeleteTarget(null)
       loadData()
     } catch {
       toast({
-        title: 'Erro',
-        description: 'Não foi possível excluir o lançamento.',
+        title: 'Erro ao excluir',
+        description:
+          'Não foi possível excluir o lançamento. Verifique sua conexão e tente novamente.',
         variant: 'destructive',
       })
+    } finally {
+      setDeleting(false)
     }
   }
 
@@ -256,7 +277,7 @@ export default function Movimentacoes() {
                           variant="ghost"
                           size="icon"
                           className="h-8 w-8 text-slate-500 hover:text-rose-600"
-                          onClick={() => handleDelete(tx.id)}
+                          onClick={() => handleDelete(tx)}
                         >
                           <Trash2 className="h-3.5 w-3.5" />
                         </Button>
@@ -269,6 +290,32 @@ export default function Movimentacoes() {
           )}
         </CardContent>
       </Card>
+
+      <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir movimentação?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {deleteTarget && (
+                <>
+                  Tem certeza que deseja excluir <strong>"{deleteTarget.description}"</strong>? Esta
+                  ação não pode ser desfeita.
+                </>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDelete}
+              disabled={deleting}
+              className="bg-rose-600 hover:bg-rose-700 text-white"
+            >
+              {deleting ? 'Excluindo...' : 'Excluir'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <TransactionModal
         isOpen={isModalOpen}

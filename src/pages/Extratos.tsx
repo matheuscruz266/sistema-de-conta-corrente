@@ -155,7 +155,9 @@ export default function Extratos() {
     } catch (err: any) {
       toast({
         title: 'Erro ao excluir',
-        description: err?.message || 'Falha ao excluir o extrato.',
+        description:
+          err?.message ||
+          'Não foi possível excluir o extrato. Verifique sua conexão e tente novamente.',
         variant: 'destructive',
       })
     } finally {
