@@ -67,7 +67,21 @@ routerAdd(
         $app.save(rec)
         importedCount++
       } catch (err) {
-        errors.push('Linha ' + (j + 1) + ': ' + (err.message || 'erro ao salvar'))
+        var errMsg = err.message || 'erro ao salvar'
+        try {
+          if (err.response && err.response.data) {
+            var fieldMsgs = []
+            var fKeys = Object.keys(err.response.data)
+            for (var fk = 0; fk < fKeys.length; fk++) {
+              var fe = err.response.data[fKeys[fk]]
+              if (fe && typeof fe.message === 'string') {
+                fieldMsgs.push(fKeys[fk] + ': ' + fe.message)
+              }
+            }
+            if (fieldMsgs.length > 0) errMsg = fieldMsgs.join('; ')
+          }
+        } catch (_) {}
+        errors.push('Linha ' + (j + 1) + ': ' + errMsg)
       }
     }
 

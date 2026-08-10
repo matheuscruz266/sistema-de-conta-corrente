@@ -37,7 +37,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import { useToast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
-import { getErrorMessage } from '@/lib/pocketbase/errors'
+import { extractFieldErrors, getErrorMessage, type FieldErrors } from '@/lib/pocketbase/errors'
 import { useProjectStore } from '@/stores/use-project-store'
 
 export default function Extratos() {
@@ -50,6 +50,7 @@ export default function Extratos() {
   const [parseError, setParseError] = useState<string | null>(null)
   const [importErrors, setImportErrors] = useState<string[]>([])
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({})
   const { toast } = useToast()
 
   const loadHistory = async () => {
@@ -75,6 +76,7 @@ export default function Extratos() {
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setParseError(null)
+    setFieldErrors({})
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0]
       if (file.size > 10 * 1024 * 1024) {
@@ -89,6 +91,7 @@ export default function Extratos() {
     if (!selectedFile) return
 
     setParseError(null)
+    setFieldErrors({})
     setParsing(true)
     try {
       const res = await parseExtratoFile(selectedFile)
@@ -118,6 +121,7 @@ export default function Extratos() {
 
     setImporting(true)
     setImportErrors([])
+    setFieldErrors({})
     try {
       const result: ImportResult = await importExtratoTransactions(
         candidates,
@@ -146,6 +150,10 @@ export default function Extratos() {
       setSelectedFile(null)
       loadHistory()
     } catch (err: any) {
+      const fErrors = extractFieldErrors(err)
+      if (Object.keys(fErrors).length > 0) {
+        setFieldErrors(fErrors)
+      }
       const message = getErrorMessage(err) || 'Falha ao gravar os lançamentos.'
       setParseError(message)
     } finally {
@@ -156,7 +164,7 @@ export default function Extratos() {
   const handleDeleteExtrato = async (extrato: Extrato) => {
     setDeletingId(extrato.id)
     try {
-      await deleteExtratoWithTransactions(extrato.id, extrato.filename)
+      await deleteExtratoWithTransactions(extrato.id, extrato.filename, extrato.project)
       toast({
         title: 'Extrato excluído',
         description: 'O registro e suas movimentações foram removidos.',
@@ -240,6 +248,19 @@ export default function Extratos() {
             <div className="flex items-start gap-2 text-sm text-red-600 bg-red-50 dark:bg-red-950/30 dark:text-red-400 p-3 rounded-lg border border-red-200 dark:border-red-900">
               <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
               <span>{parseError}</span>
+            </div>
+          )}
+
+          {Object.keys(fieldErrors).length > 0 && (
+            <div className="text-sm text-red-600 bg-red-50 dark:bg-red-950/30 dark:text-red-400 p-3 rounded-lg border border-red-200 dark:border-red-900 space-y-1">
+              {Object.entries(fieldErrors).map(([field, msg]) => (
+                <div key={field} className="flex items-center gap-2">
+                  <AlertCircle className="h-3.5 w-3.5 flex-shrink-0" />
+                  <span>
+                    <strong>{field}:</strong> {msg}
+                  </span>
+                </div>
+              ))}
             </div>
           )}
 

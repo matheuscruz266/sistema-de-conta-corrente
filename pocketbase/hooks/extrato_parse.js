@@ -6,7 +6,7 @@ routerAdd(
     if (!userId) return e.unauthorizedError('Autenticação necessária')
 
     const body = e.requestInfo().body || {}
-    const rawContent = body.content || ''
+    const rawContent = (body.content || '').replace(/^\uFEFF/, '')
     const fileName = body.filename || 'extrato.txt'
     const format = (body.format || (fileName || '').split('.').pop() || '').toLowerCase()
 

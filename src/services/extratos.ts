@@ -36,10 +36,13 @@ export const getExtratos = async (filter?: string): Promise<Extrato[]> => {
 export const deleteExtratoWithTransactions = async (
   extratoId: string,
   filename: string,
+  projectId?: string,
 ): Promise<void> => {
-  const transactions = await pb.collection('transactions').getFullList({
-    filter: `source_file = "${filename}"`,
-  })
+  let filter = `source_file = "${filename}"`
+  if (projectId) {
+    filter += ` && project = "${projectId}"`
+  }
+  const transactions = await pb.collection('transactions').getFullList({ filter })
   for (const tx of transactions) {
     await pb.collection('transactions').delete(tx.id)
   }
